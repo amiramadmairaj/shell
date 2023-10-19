@@ -12,6 +12,8 @@
 pid_t pid = -1; 
 int next_job_id = 1;
 
+struct Job job;
+
 struct Job {
     int job_id;
     pid_t pid;
