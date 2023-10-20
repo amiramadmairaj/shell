@@ -10,20 +10,33 @@
 #include <fcntl.h>
 
 pid_t pid = -1; 
-int next_job_id = 1;
-
-struct Job job;
+int next_job_id = 0;
 
 struct Job {
     int job_id;
     pid_t pid;
     int is_background;
+    int is_stopped;
 };
 
+struct Job jobs[5];
+
+void kill_everyone(){
+    for(int i = 0; i < next_job_id; i++){
+        kill(jobs[i].pid, SIGINT);
+        }
+}
 
 void sigint_handler(int sig) {
-    printf("Process %d received signal %d\n", getpid(), sig);
-    kill(pid, sig);
+    // Terminate the process if it is not a background process
+    for(int i = 0; i < next_job_id; i++){
+        printf("Current Job %d: %d\n", jobs[i].job_id, jobs[i].is_background);
+        if (jobs[i].is_background == 0){
+            printf("Process %d received signal %d\n", jobs[i].pid, sig);
+            kill(jobs[i].pid, sig);
+        }
+
+    }
 }
 
 void sigchld_handler(int sig) {
@@ -37,13 +50,13 @@ void sigchld_handler(int sig) {
 }
 
 void sigtstp_handler(int sig) {
-    if (pid != -1) {
-        // Toggle the foreground/background state of the job
-        // Here, we're assuming the job information is stored in a struct named 'job'
-        
-        if (!job.is_background) {
-            printf("Job %d stopped.\n", job.job_id);
-            kill(job.pid, SIGTSTP); // Stop the background job
+    // printf("Process %d received signal %d\n", getpid(), sig);
+    // Terminate the process if it is not a background process
+    for(int i = 0; i < next_job_id; i++){
+        if (jobs[i].is_background == 0){
+            printf("Process %d received signal %d\n", jobs[i].pid, sig);
+            jobs[i].is_stopped = 1;
+            kill(jobs[i].pid, sig);
         }
     }
 }
@@ -52,9 +65,9 @@ void sigtstp_handler(int sig) {
 int main() {
     char input[80];
     char cwd[80];
-    signal(SIGINT, sigint_handler);
-    signal(SIGCHLD, sigchld_handler);
-    signal(SIGTSTP, sigtstp_handler);
+    signal(SIGINT, sigint_handler); // when user presses ctrl-c
+    signal(SIGCHLD, sigchld_handler); // when child process terminates
+    signal(SIGTSTP, sigtstp_handler); // when user presses ctrl-z , stop the foreground process
 
     while (1) {
         printf("prompt > ");
@@ -93,27 +106,30 @@ int main() {
             }
             // Quit shell
             else if (strcmp(token, "quit") == 0) {
+                kill_everyone();
                 exit(0);
             }
 
             // Input is executable file
             else if (access(token, X_OK) == 0) {
                 pid = fork();
-                // int background = 0;
                 char *file = token;
-
-                struct Job job;
-                job.job_id = next_job_id++;
-                job.pid = pid;
-                job.is_background = 0;
+                jobs[next_job_id].job_id = next_job_id;
+                jobs[next_job_id].pid = pid;
+                jobs[next_job_id].is_background = 0;
+                jobs[next_job_id].is_stopped = 0;
                 printf("File: %s\n", file);
                 char *background_process = strtok(NULL, " ");
-                printf("Background process: %s\n", background_process);
+                // printf("Background process: %s\n", background_process);
+                
                 if (background_process != NULL && strcmp(background_process, "&") == 0){
                     printf("Background process on\n");
-                    // background = 1;
-                    job.is_background = 1;
+                    jobs[next_job_id].is_background = 1;
+                    setpgid(pid, 0);
                 }
+                printf("JOB INFO: %d %d \n", jobs[next_job_id].job_id, jobs[next_job_id].is_background);
+
+                
                 // Child process
                 if (pid == 0){
                     printf("Executing file\n");
@@ -124,9 +140,10 @@ int main() {
                     }
                 } 
                 // Parent process (skip if background process)
-                else if (!job.is_background){ //parent is waiting for child to finish
+                else if (!jobs[next_job_id].is_background){ //parent is waiting for child to finish
                     waitpid(pid, NULL, 0);
                 }
+                next_job_id++;
             }
     }
     
