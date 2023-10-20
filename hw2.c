@@ -36,7 +36,7 @@ void remove_job(int job_id) {
     next_job_id--;
 }
 
-void sigint_handler(int sig) {
+void sigint_handler(int sig) { // when ctrl-c is pressed
     for (int i = 0; i < next_job_id; i++) {
         if (!jobs[i].is_background) {
             printf("Process %d received signal %d\n", jobs[i].pid, sig);
@@ -46,10 +46,9 @@ void sigint_handler(int sig) {
     }
 }
 
-void sigchld_handler(int sig) {
+void sigchld_handler(int sig) { // terminates and reaps child processes
     int status;
     pid_t child_pid;
-
     while ((child_pid = waitpid(-1, &status, WNOHANG)) > 0) {
         if (child_pid > 0) {
             printf("Reaped child process id %d\n", child_pid);
@@ -62,11 +61,11 @@ void sigchld_handler(int sig) {
     }
 }
 
-void sigtstp_handler(int sig) {
-    printf("SIGTSTP (THIS SHOULD STOP THE FOREGROUND PROCESS)\n");
+void sigtstp_handler(int sig) { // when ctrl-z is pressed
+    printf("(THIS SHOULD STOP THE FOREGROUND PROCESS)\n");
     for (int i = 0; i < next_job_id; i++) {
-        if (jobs[i].is_background == 0) {
-            jobs[i].is_stopped = 1;
+        if (!jobs[i].is_background) {
+            jobs[i].is_stopped = 1; // update jobs status to stopped
             kill(jobs[i].pid, sig);
         }
     }
@@ -103,7 +102,7 @@ void execute_file(char* token) {
     pid = fork();
     char file_name[80];
     strcpy(file_name, token);
-     // copy input to file so we keep file name handy
+    // copy input to file so we keep file name handy
     jobs[next_job_id].job_id = next_job_id;
     jobs[next_job_id].pid = pid;
     jobs[next_job_id].is_background = 0;
@@ -126,10 +125,41 @@ void execute_file(char* token) {
         }
     } else if (!jobs[next_job_id].is_background) {
         waitpid(pid, NULL, c);
+        if (jobs[next_job_id].is_stopped == 0){
+            remove_job(jobs[next_job_id].job_id);
+        }
     }
     next_job_id++;
 }
 
+void fg(char* token){
+    int job_id;
+    token = strtok(NULL, " ");
+    if (token != NULL && token[0] == '%') {
+        token = token + 1;
+        job_id = atoi(token);
+        printf("JOB ID from percent: %d\n", job_id);
+    }
+    else{
+        int pid = atoi(token);
+        for (int i = 0; i < next_job_id; i++) {
+            if (jobs[i].pid == pid) {
+                job_id = jobs[i].job_id;
+                break;
+            }
+        }
+    }
+    for(int i = 0; i < next_job_id; i++){
+        if(jobs[i].job_id == job_id){
+            jobs[i].is_background = 0; // set to foreground
+            jobs[i].is_stopped = 0; // set to running
+            kill(jobs[i].pid, SIGCONT); // send signal to continue
+            waitpid(jobs[i].pid, NULL, WUNTRACED); // wait for process to finish (foreground)
+            break;
+        }
+    }
+
+}
 
 
 int main() {
@@ -174,25 +204,8 @@ int main() {
                 job_status();
             // fg command
             } else if (strcmp(token, "fg") == 0) {
-                token = strtok(NULL, " ");
-                // % means job id was given  
-                if (token == "%") {
-                    token = strtok(NULL, " ");
-                    int job_id = atoi(token);
-                    jobs[job_id].is_stopped = 0;
-                    jobs[job_id].is_background = 0;
-                } else {
-                    // else pid was given
-                    int job_pid = atoi(token);
-                    for (int i = 0; i < next_job_id; i++) {
-                        if (jobs[i].pid == job_pid) {
-                            jobs[i].is_stopped = 0;
-                            jobs[i].is_background = 0;
-                        }
-                    }
-                }
-            // executable file
-            } else if (access(token, X_OK) == 0) {
+                fg(token);
+           } else if (access(token, X_OK) == 0) {
                 execute_file(token);
             }
         }
