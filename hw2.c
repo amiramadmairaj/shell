@@ -46,6 +46,8 @@ void sigint_handler(int sig) { // when ctrl-c is pressed
     }
 }
 
+
+
 void sigchld_handler(int sig) { // terminates and reaps child processes
     int status;
     pid_t child_pid;
