@@ -176,8 +176,69 @@ void fg(char* token){
             break;
         }
     }
+}
+
+//Your code should accept the command kill <job_id|pid> that terminates a job by sending it a SIGINT signal using the kill() system call. Be sure to reap a terminated process
+void killer(char* token){
+    int job_id;
+    token = strtok(NULL, " ");
+    if (token != NULL && token[0] == '%') {
+        token = token + 1;
+        job_id = atoi(token);
+        printf("JOB ID from percent: %d\n", job_id);
+    }
+    else{
+        int pid = atoi(token);
+        for (int i = 0; i < next_job_id; i++) {
+            if (jobs[i].pid == pid) {
+                job_id = jobs[i].job_id;
+                break;
+            }
+        }
+    }
+    for(int i = 0; i < next_job_id; i++){
+        if(jobs[i].job_id == job_id){
+            kill(jobs[i].pid, SIGINT); // send signal to kill process
+            setpgid(jobs[i].pid, 0);
+            break;
+        }
+    }
 
 }
+
+//changes the state of a job currently in the Stopped state to the Background/Running state
+void bg(char* token){
+    int job_id;
+    token = strtok(NULL, " ");
+    if (token != NULL && token[0] == '%') {
+        token = token + 1;
+        job_id = atoi(token);
+        printf("JOB ID from percent: %d\n", job_id);
+    }
+    else{
+        int pid = atoi(token);
+        for (int i = 0; i < next_job_id; i++) {
+            if (jobs[i].pid == pid) {
+                job_id = jobs[i].job_id;
+                break;
+            }
+        }
+    }
+    for(int i = 0; i < next_job_id; i++){
+        if(jobs[i].job_id == job_id){
+            jobs[i].is_background = 1; // set to background
+            jobs[i].is_stopped = 0; // set to running
+            setpgid(jobs[i].pid, 0); 
+            kill(jobs[i].pid, SIGCONT); // send signal to continue
+            break;
+        }
+    }
+}
+
+
+
+
+
 
 
 int main() {
@@ -223,9 +284,16 @@ int main() {
             // fg command
             } else if (strcmp(token, "fg") == 0) {
                 fg(token);
+            // bg command
+            } else if (strcmp(token, "bg") == 0) {
+                bg(token);
+            // kill command
+            }else if (strcmp(token, "kill") == 0) {
+                killer(token);
+            // execute file
            } else if (access(token, X_OK) == 0) {
                 execute_file(token);
-            }
+        }
         }
     }
     return 0;
