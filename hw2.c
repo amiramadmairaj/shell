@@ -72,19 +72,35 @@ void sigtstp_handler(int sig) { // when ctrl-z is pressed
         if (!jobs[i].is_background) {
             jobs[i].is_stopped = 1; // update jobs status to stopped
             kill(jobs[i].pid, sig);
+
+        }
+    }
+
+    // Check if processes have been stopped and update the is_stopped flag
+    int status;
+    for (int i = 0; i < next_job_id; i++) {
+        if (!jobs[i].is_background && waitpid(jobs[i].pid, &status, WNOHANG | WUNTRACED) == jobs[i].pid) {
+            if (WIFSTOPPED(status)) {
+                jobs[i].is_stopped = 1; // update jobs status to stopped
+            } else {
+                jobs[i].is_stopped = 0; // update jobs status to running
+            }
         }
     }
 }
 
+
 void job_status() {
     for (int i = 0; i < next_job_id; i++) {
-        printf("[%d] (%d) %s %s", jobs[i].job_id, jobs[i].pid, jobs[i].is_stopped ?  "Stopped" : "Running", jobs[i].name);
-        if (jobs[i].is_background) {
-            printf(" &\n");
-        } else {
-            printf("\n");
+        printf("IS IT STOPPED? %d\n", jobs[i].is_stopped);
+        if (jobs[i].is_stopped == 0){
+            printf("[%d] (%d) Running %s\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
+        }
+        else{
+            printf("[%d] Stopped %s\n", jobs[i].job_id, jobs[i].name);
         }
     }
+
 }
 
 void change_directory(const char* path) {
@@ -156,8 +172,8 @@ void fg(char* token){
             jobs[i].is_background = 0; // set to foreground
             jobs[i].is_stopped = 0; // set to running
             kill(jobs[i].pid, SIGCONT); // send signal to continue
-            waitpid(jobs[i].pid, NULL, WUNTRACED); // wait for process to finish (foreground)
-            remove_job(i); // Remove the job after it finishes
+            waitpid(jobs[i].pid, NULL, WUNTRACED);
+            
 
             break;
         }
