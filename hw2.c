@@ -29,9 +29,11 @@ void kill_everyone() {
 }
 
 void remove_job(int job_id) {
-    for (int j = job_id; j < next_job_id; j++) {
+    free(jobs[job_id].name); // free memory for name
+    for (int j = job_id; j < next_job_id - 1; j++) {
         jobs[j] = jobs[j + 1];
         jobs[j].job_id = j;
+
     }
     next_job_id--;
 }
@@ -46,19 +48,20 @@ void sigint_handler(int sig) { // when ctrl-c is pressed
     }
 }
 
-
-
 void sigchld_handler(int sig) { // terminates and reaps child processes
     int status;
     pid_t child_pid;
     while ((child_pid = waitpid(-1, &status, WNOHANG)) > 0) {
         if (child_pid > 0) {
-            printf("Reaped child process id %d\n", child_pid);
-            for (int i = 0; i < next_job_id; i++) {
-                if (jobs[i].pid == child_pid) {
-                    remove_job(i);
+            if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                printf("Reaped child process id %d\n", child_pid);
+                for (int i = 0; i < next_job_id; i++) {
+                    if (jobs[i].pid == child_pid) {
+                        remove_job(i);
+                    }
                 }
             }
+
         }
     }
 }
@@ -127,9 +130,6 @@ void execute_file(char* token) {
         }
     } else if (!jobs[next_job_id].is_background) {
         waitpid(pid, NULL, c);
-        if (jobs[next_job_id].is_stopped == 0){
-            remove_job(jobs[next_job_id].job_id);
-        }
     }
     next_job_id++;
 }
@@ -157,6 +157,8 @@ void fg(char* token){
             jobs[i].is_stopped = 0; // set to running
             kill(jobs[i].pid, SIGCONT); // send signal to continue
             waitpid(jobs[i].pid, NULL, WUNTRACED); // wait for process to finish (foreground)
+            remove_job(i); // Remove the job after it finishes
+
             break;
         }
     }
