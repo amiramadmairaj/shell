@@ -171,8 +171,8 @@ void fg(char* token){
             jobs[i].is_stopped = 0; // set to running
             kill(jobs[i].pid, SIGCONT); // send signal to continue
             int currentState;
-            pid_t childpid;
-            childpid = waitpid(jobs[i].pid, &currentState, c);
+          
+            waitpid(jobs[i].pid, &currentState, c);
             if(WIFEXITED(currentState)){
                 remove_job(i);
             }
@@ -249,6 +249,7 @@ int main() {
     signal(SIGINT, sigint_handler);
     signal(SIGCHLD, sigchld_handler);
     signal(SIGTSTP, sigtstp_handler);
+    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
 
     while (1) {
         printf("prompt > ");
@@ -256,6 +257,7 @@ int main() {
             perror("Error reading input");
             exit(1);
         }
+        
 
         size_t input_len = strlen(input);
         if (input_len > 0 && input[input_len - 1] == '\n') {
