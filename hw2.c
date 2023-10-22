@@ -11,6 +11,7 @@
 
 pid_t pid = -1; 
 int next_job_id = 0;
+// pid_t foreground_pid = -1; 
 
 struct Job {
     char *name;
@@ -58,13 +59,16 @@ void sigchld_handler(int sig) { // terminates and reaps child processes
                 for (int i = 0; i < next_job_id; i++) {
                     if (jobs[i].pid == child_pid) {
                         remove_job(i);
+                        break;
                     }
                 }
+
             }
 
         }
     }
 }
+
 
 void sigtstp_handler(int sig) { // when ctrl-z is pressed
     printf("(THIS SHOULD STOP THE FOREGROUND PROCESS)\n");
@@ -72,35 +76,24 @@ void sigtstp_handler(int sig) { // when ctrl-z is pressed
         if (!jobs[i].is_background) {
             jobs[i].is_stopped = 1; 
             kill(jobs[i].pid, sig);
-
         }
     }
 }
-
 
 
 
 void job_status() {
     for (int i = 0; i < next_job_id; i++) {
         // printf("IS IT STOPPED? %d\n", jobs[i].is_stopped);
-        if (jobs[i].is_stopped == 0){ 
-            if (jobs[i].is_background == 1){
-                printf("[%d] (%d) Running %s &\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
-            }
-            else{
-                printf("[%d] (%d) Running %s\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
-            }
+        if (jobs[i].is_background == 1){
+            printf("[%d] (%d) Running %s &\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
         }
-        else if (jobs[i].is_stopped == 1){
-            if (jobs[i].is_background == 1){
-                printf("[%d] (%d) Stopped %s &\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
-            }
-            else{
-                printf("[%d] (%d) Stopped %s\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
-            }
+        else{
+            printf("[%d] (%d) Stopped %s\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
         }
     }
 }
+
 
 void change_directory(const char* path) {
     if (chdir(path) != 0) {
@@ -117,21 +110,20 @@ void print_working_directory() {
     }
 }
 
+
 void execute_file(char* token) {
-    printf("INPUT FOR EXC FILE%s\n", token);
     pid = fork();
     char file_name[80];
     strcpy(file_name, token);
-    // copy input to file so we keep file name handy
+    // copy input to file so we keep the file name handy
     jobs[next_job_id].job_id = next_job_id;
     jobs[next_job_id].pid = pid;
     jobs[next_job_id].is_background = 0;
     jobs[next_job_id].is_stopped = 0;
     jobs[next_job_id].name = strdup(file_name);
-    
-    int c = WUNTRACED|__W_CONTINUED;
+
     char* background_process = strtok(NULL, " ");
-    printf("BACKGROUND PROCESS: %s\n", background_process);
+
     if (background_process != NULL && strcmp(background_process, "&") == 0) {
         jobs[next_job_id].is_background = 1;
         setpgid(pid, 0);
@@ -139,14 +131,21 @@ void execute_file(char* token) {
 
     if (pid == 0) {
         char* args[] = {token, NULL};
-        if (execv(token, args) == -1) {
-            perror("Error executing file");
+        if (execvp(token, args) < 0) {
+            if (execv(token, args) < 0) {
+                perror("Error executing file");
+            }
         }
-    } else if (!jobs[next_job_id].is_background) {
+    }
+
+    if (!jobs[next_job_id].is_background) {
+        int c = WUNTRACED | WCONTINUED;
         waitpid(pid, NULL, c);
     }
+    
     next_job_id++;
 }
+
 
 void fg(char* token){
     int job_id;
@@ -165,15 +164,18 @@ void fg(char* token){
             }
         }
     }
-    int c = WUNTRACED|__W_CONTINUED;
-    for(int i = 0; i < next_job_id; i++){
+    int c = WUNTRACED|WCONTINUED;
+    for(int i = 0; i <= next_job_id; i++){
         if(jobs[i].job_id == job_id){
             jobs[i].is_background = 0; // set to foreground
             jobs[i].is_stopped = 0; // set to running
             kill(jobs[i].pid, SIGCONT); // send signal to continue
-            waitpid(jobs[i].pid, NULL, c);            
-
-            break;
+            int currentState;
+            pid_t childpid;
+            childpid = waitpid(jobs[i].pid, &currentState, c);
+            if(WIFEXITED(currentState)){
+                remove_job(i);
+            }
         }
     }
 }
@@ -291,10 +293,10 @@ int main() {
             }else if (strcmp(token, "kill") == 0) {
                 killer(token);
             // execute file
-           } else if (access(token, X_OK) == 0) {
+        } else if (access(token, X_OK) == 0) {
                 execute_file(token);
         }
-        }
     }
+}
     return 0;
 }
