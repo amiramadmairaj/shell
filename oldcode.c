@@ -11,6 +11,7 @@
 
 pid_t pid = -1; 
 int next_job_id = 0;
+// pid_t foreground_pid = -1; 
 
 struct Job {
     char *name;
@@ -80,30 +81,6 @@ void sigtstp_handler(int sig) { // when ctrl-z is pressed
 }
 
 
-void job_status_to_file(const char* filename, int append) {
-    FILE* file;
-    if (append) {
-        file = fopen(filename, "a");
-    } else {
-        file = fopen(filename, "w");
-    }
-
-    if (file == NULL) {
-        perror("Error opening file");
-        return;
-    }
-
-    for (int i = 0; i < next_job_id; i++) {
-        if (jobs[i].is_background == 1) {
-            fprintf(file, "[%d] (%d) Running %s &\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
-        } else {
-            fprintf(file, "[%d] (%d) Stopped %s\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
-        }
-    }
-
-    fclose(file);
-}
-
 
 void job_status() {
     for (int i = 0; i < next_job_id; i++) {
@@ -124,31 +101,6 @@ void change_directory(const char* path) {
     }
 }
 
-
-void print_working_directory_to_file(const char* filename, int append_to_file) {
-    FILE* file;
-    if (append_to_file) {
-        file = fopen(filename, "a");
-    } else {
-        file = fopen(filename, "w");
-    }
-
-    if (file == NULL) {
-        perror("Error opening file");
-        return;
-    }
-
-    char cwd[80];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        fprintf(file, "%s\n", cwd);
-    } else {
-        perror("Error getting current directory");
-    }
-
-    fclose(file);
-}
-
-
 void print_working_directory() {
     char cwd[80];
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
@@ -159,82 +111,7 @@ void print_working_directory() {
 }
 
 
-
-void execute_file_2_outfile(char* token, char* outputfile) {
-    pid_t pid;
-    pid = fork();
-    if (pid < 0) {
-        perror("Fork failed");
-        exit(1);
-    }
-    char* background_process = strtok(NULL, " ");
-    if (pid == 0) {
-        mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
-        int outFileID = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, mode);
-        if (outFileID < 0) {
-            perror("Error opening output file");
-            exit(1);
-        }
-        dup2(outFileID, STDOUT_FILENO);  // Redirect STDOUT to the output file
-
-        char* args[] = {token, NULL};
-        if (execv(token, args) < 0) {
-            perror("Error executing file");
-            exit(1);
-        }
-    }
-
-    int c = WUNTRACED;
-    waitpid(pid, NULL, c);
-}
-
-
-void execute_file_2_inputfile(char* token, char* inputfile, int output2fileafter, char* outputfile, int append) {
-    pid_t pid;
-    pid = fork();
-    if (pid < 0) {
-        perror("Fork failed");
-        exit(1);
-    }
-    char* background_process = strtok(NULL, " ");
-    if (pid == 0) {
-        mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
-        int inFileID = open(inputfile, O_RDONLY, mode);
-        if (inFileID < 0) {
-            perror("Error opening input file");
-            exit(1);
-        }
-        dup2(inFileID, STDIN_FILENO);  // Redirect STDIN to the input file
-
-        // Check if output should be redirected to a file
-        if (output2fileafter == 1) {
-            int outFileID;
-            if (append) {
-                outFileID = open(outputfile, O_WRONLY | O_CREAT | O_APPEND, mode);
-            } else {
-                outFileID = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, mode);
-            }
-            if (outFileID < 0) {
-                perror("Error opening output file");
-                exit(1);
-            }
-            dup2(outFileID, STDOUT_FILENO);  // Redirect STDOUT to the output file
-        }
-
-        char* args[] = {token, NULL};
-        if (execv(token, args) < 0) {
-            perror("Error executing file");
-            exit(1);
-        }
-    }
-
-    int c = WUNTRACED;
-    waitpid(pid, NULL, c);
-}
-
-
-
-void execute_file(char* token, int bg_process) {
+void execute_file(char* token) {
     pid = fork();
     char file_name[80];
     strcpy(file_name, token);
@@ -247,14 +124,13 @@ void execute_file(char* token, int bg_process) {
 
     char* background_process = strtok(NULL, " ");
 
-    if (bg_process == 1) {
+    if (background_process != NULL && strcmp(background_process, "&") == 0) {
         jobs[next_job_id].is_background = 1;
         setpgid(pid, 0);
     }
 
     if (pid == 0) {
         char* args[] = {token, NULL};
-        //FIX THIS MAY NOT WORK ./counter
         if (execvp(token, args) < 0) {
             if (execv(token, args) < 0) {
                 perror("Error executing file");
@@ -263,12 +139,8 @@ void execute_file(char* token, int bg_process) {
     }
 
     if (!jobs[next_job_id].is_background) {
-        int c = WUNTRACED;
-        int currentState;
-        waitpid(jobs[next_job_id].pid, &currentState, c);
-        if(WIFEXITED(currentState)){
-            remove_job(jobs[next_job_id].job_id);
-        }
+        int c = WUNTRACED | WCONTINUED;
+        waitpid(pid, NULL, c);
     }
     
     next_job_id++;
@@ -378,8 +250,7 @@ int main() {
     signal(SIGCHLD, sigchld_handler);
     signal(SIGTSTP, sigtstp_handler);
     mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
-    const char * in = "input.txt";
-    const char * out = "output.txt";
+
     while (1) {
         printf("prompt > ");
         if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -406,15 +277,6 @@ int main() {
                 }
             // pwd command
             } else if (strcmp(token, "pwd") == 0) {
-                char * direction = strtok(NULL, " ");
-                int append_to_file = 0;
-                if (direction != NULL && (strcmp(direction, ">") == 0 || strcmp(direction, ">>") == 0)){
-                    if (strcmp(direction, ">>") == 0){
-                        int append_to_file = 0;
-                    }
-                    char * file = strtok(NULL, " ");
-                    print_working_directory_to_file(file, append_to_file);
-                }
                 print_working_directory();
             // quit command
             } else if (strcmp(token, "quit") == 0) {
@@ -422,18 +284,7 @@ int main() {
                 exit(0);
             // jobs command
             } else if (strcmp(token, "jobs") == 0) {
-                // check if we need to output to file
-                char * direction = strtok(NULL, " ");
-                int append_to_file = 0;
-                if (direction != NULL && (strcmp(direction, ">") == 0 || strcmp(direction, ">>") == 0)){
-                    if (strcmp(direction, ">>") == 0){
-                        int append_to_file = 0;
-                    }
-                    char * file = strtok(NULL, " ");
-                    job_status_to_file(file, append_to_file);
-                }
                 job_status();
-      
             // fg command
             } else if (strcmp(token, "fg") == 0) {
                 fg(token);
@@ -444,42 +295,10 @@ int main() {
             }else if (strcmp(token, "kill") == 0) {
                 killer(token);
             // execute file
-            } else if (access(token, X_OK) == 0) {
-                char * direction = strtok(NULL, " ");
-                if (direction != NULL && strcmp(direction, "&") == 0){ // if background process (no direction possible)
-                    execute_file(token, 1); // background process on
-                }
-                else if (direction != NULL && strcmp(direction, ">") == 0){
-                    char * file = strtok(NULL, " ");
-                    execute_file_2_outfile(token,file);
-                }
-                
-                else if (direction != NULL && strcmp(direction, "<") == 0){
-                    char * file = strtok(NULL, " ");
-                    char * file2;
-                    char * direction2 = strtok(NULL, " ");
-                    int output2fileafter = 0;
-                    int append_to_file = 0;
-                    if (direction2 != NULL && (strcmp(direction2, ">") == 0 || strcmp(direction2, ">>") == 0)){
-                        if (strcmp(direction2, ">>") == 0){
-                            append_to_file = 1;
-                        }
-                        output2fileafter = 1;
-                        file2 = strtok(NULL, " ");
-
-                    }
-                    
-                    execute_file_2_inputfile(token, file, output2fileafter, file2, append_to_file);
-                }
-                else{
-                    execute_file(token, 0); // background process off
-                }
+        } else if (access(token, X_OK) == 0) {
+                execute_file(token);
         }
     }
 }
     return 0;
 }
-
-
-
-
