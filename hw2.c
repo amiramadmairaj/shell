@@ -41,7 +41,6 @@ void remove_job(int job_id) {
 void sigint_handler(int sig) { // when ctrl-c is pressed
     for (int i = 0; i < next_job_id; i++) {
         if (!jobs[i].is_background) {
-            printf("Process %d received signal %d\n", jobs[i].pid, sig);
             kill(jobs[i].pid, sig);
             remove_job(i);
         }
@@ -54,7 +53,6 @@ void sigchld_handler(int sig) { // terminates and reaps child processes
     while ((child_pid = waitpid(-1, &status, WNOHANG)) > 0) {
         if (child_pid > 0) {
             if (WIFEXITED(status) || WIFSIGNALED(status)) {
-                printf("Reaped child process id %d\n", child_pid);
                 for (int i = 0; i < next_job_id; i++) {
                     if (jobs[i].pid == child_pid) {
                         remove_job(i);
@@ -70,7 +68,6 @@ void sigchld_handler(int sig) { // terminates and reaps child processes
 
 
 void sigtstp_handler(int sig) { // when ctrl-z is pressed
-    printf("(THIS SHOULD STOP THE FOREGROUND PROCESS)\n");
     for (int i = 0; i < next_job_id; i++) {
         if (!jobs[i].is_background) {
             jobs[i].is_stopped = 1; 
@@ -107,7 +104,6 @@ void job_status_to_file(const char* filename, int append) {
 
 void job_status() {
     for (int i = 0; i < next_job_id; i++) {
-        // printf("IS IT STOPPED? %d\n", jobs[i].is_stopped);
         if (jobs[i].is_background == 1){
             printf("[%d] (%d) Running %s &\n", jobs[i].job_id, jobs[i].pid, jobs[i].name);
         }
@@ -298,7 +294,7 @@ void fg(char* token){
             }
         }
     }
-    int c = WUNTRACED|WCONTINUED;
+    int c = WUNTRACED;
     for(int i = 0; i <= next_job_id; i++){
         if(jobs[i].job_id == job_id){
             jobs[i].is_background = 0; // set to foreground
@@ -374,18 +370,13 @@ void bg(char* token){
 
 
 
-
-
-
 int main() {
     char input[80];
     char cwd[80];
     signal(SIGINT, sigint_handler);
     signal(SIGCHLD, sigchld_handler);
     signal(SIGTSTP, sigtstp_handler);
-    mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
-    const char * in = "input.txt";
-    const char * out = "output.txt";
+
     while (1) {
         printf("prompt > ");
         if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -456,6 +447,9 @@ int main() {
                 if (direction != NULL && strcmp(direction, "&") == 0){ // if background process (no direction possible)
                     execute_file(token, 1); // background process on
                 }
+                else if (direction == NULL){
+                    execute_file(token, 0); // background process off
+                }
                 else if (direction != NULL && strcmp(direction, ">") == 0 || strcmp(direction, ">>") == 0){
                     if (strcmp(direction, ">>") == 0){
                         append_to_file = 1;
@@ -476,13 +470,8 @@ int main() {
                         }
                         output_2_file_after = 1;
                         file2 = strtok(NULL, " ");
-
                     }
-                    
                     execute_file_2_inputfile(token, file, output_2_file_after, file2, append_to_file);
-                }
-                else{
-                    execute_file(token, 0); // background process off
                 }
         }
     }
