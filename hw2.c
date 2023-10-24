@@ -22,6 +22,33 @@ struct Job {
 
 struct Job jobs[5];
 
+
+void killer(char* token){
+    int job_id;
+    token = strtok(NULL, " ");
+    if (token != NULL && token[0] == '%') {
+        token = token + 1;
+        job_id = atoi(token);
+    }
+    else{
+        int pid = atoi(token);
+        for (int i = 0; i < next_job_id; i++) {
+            if (jobs[i].pid == pid) {
+                job_id = jobs[i].job_id;
+                break;
+            }
+        }
+    }
+    for(int i = 0; i < next_job_id; i++){
+        if(jobs[i].job_id == job_id){
+            kill(jobs[i].pid, SIGINT); // send signal to kill process
+            setpgid(jobs[i].pid, 0);
+            break;
+        }
+    }
+
+}
+
 void kill_everyone() {
     for (int i = 0; i < next_job_id; i++) {
         kill(jobs[i].pid, SIGINT);
@@ -29,23 +56,21 @@ void kill_everyone() {
 }
 
 void remove_job(int job_id) {
-    free(jobs[job_id].name); // free memory for name
-    for (int j = job_id; j < next_job_id - 1; j++) {
-        jobs[j] = jobs[j + 1];
-        jobs[j].job_id = j;
-
+    for (int i = job_id; i < next_job_id - 1; i++) {
+        jobs[i] = jobs[i + 1];
     }
     next_job_id--;
 }
 
 void sigint_handler(int sig) { // when ctrl-c is pressed
-    for (int i = 0; i < next_job_id; i++) {
+    for (int i = 0; i <= next_job_id; i++) {
         if (!jobs[i].is_background) {
             kill(jobs[i].pid, sig);
             remove_job(i);
         }
     }
 }
+
 
 void sigchld_handler(int sig) { // terminates and reaps child processes
     int status;
@@ -69,7 +94,7 @@ void sigchld_handler(int sig) { // terminates and reaps child processes
 
 void sigtstp_handler(int sig) { // when ctrl-z is pressed
     for (int i = 0; i < next_job_id; i++) {
-        if (!jobs[i].is_background) {
+        if (jobs[i].is_background == 0) {
             jobs[i].is_stopped = 1; 
             kill(jobs[i].pid, sig);
         }
@@ -310,62 +335,40 @@ void fg(char* token){
     }
 }
 
-//Your code should accept the command kill <job_id|pid> that terminates a job by sending it a SIGINT signal using the kill() system call. Be sure to reap a terminated process
-void killer(char* token){
-    int job_id;
-    token = strtok(NULL, " ");
-    if (token != NULL && token[0] == '%') {
-        token = token + 1;
-        job_id = atoi(token);
-        printf("JOB ID from percent: %d\n", job_id);
-    }
-    else{
-        int pid = atoi(token);
-        for (int i = 0; i < next_job_id; i++) {
-            if (jobs[i].pid == pid) {
-                job_id = jobs[i].job_id;
-                break;
-            }
-        }
-    }
-    for(int i = 0; i < next_job_id; i++){
-        if(jobs[i].job_id == job_id){
-            kill(jobs[i].pid, SIGINT); // send signal to kill process
-            setpgid(jobs[i].pid, 0);
-            break;
-        }
-    }
 
-}
 
 //changes the state of a job currently in the Stopped state to the Background/Running state
 void bg(char* token){
     int job_id;
     token = strtok(NULL, " ");
+    getpgid(0);
     if (token != NULL && token[0] == '%') {
         token = token + 1;
         job_id = atoi(token);
         printf("JOB ID from percent: %d\n", job_id);
+        jobs[job_id].is_background = 1;
+        setpgid(jobs[job_id].pid, jobs[job_id].pid);;
+        jobs[job_id].is_stopped = 0; // set to running
+        kill(jobs[job_id].pid, SIGCONT);
     }
     else{
         int pid = atoi(token);
+        job_id = -1;
         for (int i = 0; i < next_job_id; i++) {
             if (jobs[i].pid == pid) {
                 job_id = jobs[i].job_id;
                 break;
             }
         }
-    }
-    for(int i = 0; i < next_job_id; i++){
-        if(jobs[i].job_id == job_id){
-            jobs[i].is_background = 1; // set to background
-            jobs[i].is_stopped = 0; // set to running
-            setpgid(jobs[i].pid, 0); 
-            kill(jobs[i].pid, SIGCONT); // send signal to continue
-            break;
+        if(job_id != -1){
+            jobs[job_id].is_background = 1;
+            setpgid(jobs[job_id].pid, jobs[job_id].pid);
+            jobs[job_id].is_stopped = 0; // set to running
+            kill(jobs[job_id].pid, SIGCONT);
         }
     }
 }
+
 
 
 
@@ -407,12 +410,14 @@ int main() {
                 int append_to_file = 0;
                 if (direction != NULL && (strcmp(direction, ">") == 0 || strcmp(direction, ">>") == 0)){
                     if (strcmp(direction, ">>") == 0){
-                        int append_to_file = 0;
+                        append_to_file = 1;
                     }
                     char * file = strtok(NULL, " ");
                     print_working_directory_to_file(file, append_to_file);
                 }
+                else{
                 print_working_directory();
+                }
             // quit command
             } else if (strcmp(token, "quit") == 0) {
                 kill_everyone();
