@@ -56,6 +56,7 @@ void kill_everyone() {
 void remove_job(int job_id) {
   for (int i = job_id; i < next_job_id - 1; i++) {
     jobs[i] = jobs[i + 1];
+    jobs[i].job_id--;
   }
   next_job_id--;
 }
