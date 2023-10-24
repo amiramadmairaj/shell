@@ -334,12 +334,13 @@ void bg(char * token) {
   if (token != NULL && token[0] == '%') {
     token = token + 1;
     job_id = atoi(token);
-    printf("JOB ID from percent: %d\n", job_id);
+    setpgid(jobs[job_id].pid, 0);
     jobs[job_id].is_background = 1;
-    setpgid(jobs[job_id].pid, jobs[job_id].pid);;
     jobs[job_id].is_stopped = 0; // set to running
     kill(jobs[job_id].pid, SIGCONT);
-  } else {
+    signal(SIGCHLD, sigchld_handler);
+  } 
+  else {
     int pid = atoi(token);
     job_id = -1;
     for (int i = 0; i < next_job_id; i++) {
@@ -349,10 +350,11 @@ void bg(char * token) {
       }
     }
     if (job_id != -1) {
-      jobs[job_id].is_background = 1;
-      setpgid(jobs[job_id].pid, jobs[job_id].pid);
+      setpgid(jobs[job_id].pid, 0);
       jobs[job_id].is_stopped = 0; // set to running
+      jobs[job_id].is_background = 1;
       kill(jobs[job_id].pid, SIGCONT);
+      signal(SIGCHLD, sigchld_handler);
     }
   }
 }
